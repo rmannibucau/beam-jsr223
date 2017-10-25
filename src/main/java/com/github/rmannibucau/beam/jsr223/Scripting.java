@@ -1,18 +1,33 @@
 package com.github.rmannibucau.beam.jsr223;
 
+import java.io.Serializable;
+import java.lang.reflect.ParameterizedType;
+import java.lang.reflect.Type;
+
 import javax.script.Bindings;
 import javax.script.ScriptEngine;
 import javax.script.ScriptEngineManager;
 import javax.script.ScriptException;
 
+import org.apache.beam.sdk.coders.CannotProvideCoderException;
+import org.apache.beam.sdk.coders.Coder;
+import org.apache.beam.sdk.coders.SerializableCoder;
 import org.apache.beam.sdk.transforms.DoFn;
 import org.apache.beam.sdk.transforms.PTransform;
 import org.apache.beam.sdk.transforms.ParDo;
 import org.apache.beam.sdk.values.PCollection;
+import org.apache.beam.sdk.values.TypeDescriptor;
 
-public class Scripting<A, B> extends PTransform<PCollection<A>,PCollection<B>> {
+public abstract class Scripting<A, B> extends PTransform<PCollection<A>,PCollection<B>> {
     private String language = "js";
     private String script = "";
+    private Coder<B> coder;
+
+    public static <F, T> Scripting<F, T> of(final Coder<T> coder) {
+        final Scripting<F, T> scripting = new Scripting<F, T>() {};
+        scripting.coder = coder;
+        return scripting;
+    }
 
     public Scripting<A, B> withLanguage(final String language) {
         this.language = language;
@@ -30,6 +45,20 @@ public class Scripting<A, B> extends PTransform<PCollection<A>,PCollection<B>> {
             throw new IllegalArgumentException("Language and Script must be set");
         }
         return apCollection.apply(ParDo.of(new ScriptingFn<>(language, script)));
+    }
+
+    @Override // ensure we don't always need to set the coder
+    public <T> Coder<T> getDefaultOutputCoder(final PCollection<A> input, final PCollection<T> output)
+            throws CannotProvideCoderException {
+        if (coder != null) {
+            return (Coder<T>) coder;
+        }
+        final Type superclass = getClass().getGenericSuperclass();
+        if (ParameterizedType.class.isInstance(superclass)) {
+            final Type type = ParameterizedType.class.cast(superclass).getActualTypeArguments()[1];
+            return (Coder<T>) output.getPipeline().getCoderRegistry().getCoder(TypeDescriptor.of(type));
+        }
+        return (Coder<T>) SerializableCoder.of(Serializable.class);
     }
 
     private static class ScriptingFn<A, B> extends DoFn<A, B> {

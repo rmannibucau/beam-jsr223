@@ -3,7 +3,6 @@ package com.github.rmannibucau.beam.jsr223;
 import static org.junit.Assert.assertEquals;
 
 import org.apache.beam.sdk.PipelineResult;
-import org.apache.beam.sdk.coders.VarIntCoder;
 import org.apache.beam.sdk.testing.PAssert;
 import org.apache.beam.sdk.testing.TestPipeline;
 import org.apache.beam.sdk.transforms.Create;
@@ -18,11 +17,10 @@ public class ScriptingTest {
     @Test
     public void run() {
         final PCollection<Integer> out = pipeline.apply(Create.of("v1", "v22"))
-                                                   .apply(new Scripting<String, Integer>()
+                                                   .apply(new Scripting<String, Integer>() {}
                                                            .withLanguage("js")
                                                            // .withScript("context.output(context.element().length());"))
-                                                           .withScript("context.element().length();"))
-                                                    .setCoder(VarIntCoder.of());
+                                                           .withScript("context.element().length();"));
         PAssert.that(out).containsInAnyOrder(2, 3);
         final PipelineResult result = pipeline.run();
         assertEquals(PipelineResult.State.DONE, result.waitUntilFinish());
