@@ -5,9 +5,13 @@ import java.lang.reflect.ParameterizedType;
 import java.lang.reflect.Type;
 
 import javax.script.Bindings;
+import javax.script.Compilable;
+import javax.script.CompiledScript;
+import javax.script.ScriptContext;
 import javax.script.ScriptEngine;
 import javax.script.ScriptEngineManager;
 import javax.script.ScriptException;
+import javax.script.SimpleScriptContext;
 
 import org.apache.beam.sdk.coders.CannotProvideCoderException;
 import org.apache.beam.sdk.coders.Coder;
@@ -66,6 +70,7 @@ public abstract class Scripting<A, B> extends PTransform<PCollection<A>,PCollect
         private String script;
 
         private volatile ScriptEngine engine;
+        private CompiledScript compiledScript;
 
         ScriptingFn(final String language, final String script) {
             this.language = language;
@@ -82,14 +87,37 @@ public abstract class Scripting<A, B> extends PTransform<PCollection<A>,PCollect
                     engine = manager.getEngineByMimeType(language);
                 }
             }
+            if (Compilable.class.isInstance(engine)) {
+                try {
+                    compiledScript = Compilable.class.cast(engine).compile(script);
+                } catch (ScriptException e) {
+                    throw new IllegalStateException(e);
+                }
+            } else {
+                compiledScript = new CompiledScript() {
+                    @Override
+                    public Object eval(final ScriptContext context) throws ScriptException {
+                        return engine.eval(script, context);
+                    }
+
+                    @Override
+                    public ScriptEngine getEngine() {
+                        return engine;
+                    }
+                };
+            }
         }
 
         @ProcessElement
         public void onElement(final ProcessContext context) {
             final Bindings bindings = engine.createBindings();
             bindings.put("context", context);
+
+            final SimpleScriptContext scriptContext = new SimpleScriptContext();
+            scriptContext.setBindings(bindings, ScriptContext.ENGINE_SCOPE);
+
             try {
-                final Object eval = engine.eval(script, bindings);
+                final Object eval = compiledScript.eval(scriptContext);
                 if (eval != null) { // if the script returns sthg it is the output otherwise assume it uses context.output()
                     context.output((B) eval);
                 }
