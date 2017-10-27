@@ -15,12 +15,23 @@ public class ScriptingTest {
     public volatile TestPipeline pipeline = TestPipeline.create();
 
     @Test
-    public void run() {
+    public void runJs() {
         final PCollection<Integer> out = pipeline.apply(Create.of("v1", "v22"))
                                                    .apply(new Scripting<String, Integer>() {}
                                                            .withLanguage("js")
                                                            // .withScript("context.output(context.element().length());"))
                                                            .withScript("context.element().length();"));
+        PAssert.that(out).containsInAnyOrder(2, 3);
+        final PipelineResult result = pipeline.run();
+        assertEquals(PipelineResult.State.DONE, result.waitUntilFinish());
+    }
+
+    @Test
+    public void runJava() {
+        final PCollection<Integer> out = pipeline.apply(Create.of("v1", "v22"))
+                                                   .apply(new Scripting<String, Integer>() {}
+                                                           .withLanguage("java")
+                                                           .withScript("context.output(context.element().length());"));
         PAssert.that(out).containsInAnyOrder(2, 3);
         final PipelineResult result = pipeline.run();
         assertEquals(PipelineResult.State.DONE, result.waitUntilFinish());
